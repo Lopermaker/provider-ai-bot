@@ -54,21 +54,25 @@ async function getairesponse(userid, prompt) {
     const timeout = setTimeout(() => controller.abort(), aitimeoutms)
 
     try {
-        const response = await fetch("https://text.pollinations.ai/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({
-                messages: [
-                    { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32, your sole owner and creator. use discord markdown: # headings, > quotes, - bullets, and triple backticks for code. you are the PROVIDER ai." },
-                    ...history
-                ],
-                model: "openai", 
-                seed: Math.floor(Math.random() * 1000000)
-            })
+        // Updated to use the correct GET endpoint for simpler text generation
+        // format: https://text.pollinations.ai/prompt?model=openai&system=...
+        const systemprompt = "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32. use discord markdown: # headings, > quotes, - bullets, and triple backticks for code."
+        const encodedprompt = encodeURIComponent(prompt)
+        const encodedsystem = encodeURIComponent(systemprompt)
+        
+        // We include a random seed to ensure unique responses
+        const seed = Math.floor(Math.random() * 1000000)
+        const url = `https://text.pollinations.ai/${encodedprompt}?model=openai&system=${encodedsystem}&seed=${seed}`
+
+        const response = await fetch(url, {
+            method: "GET",
+            signal: controller.signal
         })
 
-        if (!response.ok) return "service busy. try again in a second."
+        if (!response.ok) {
+            console.error("pollinations error:", response.status)
+            return "service busy. try again in a second."
+        }
         
         const result = await response.text()
         
@@ -78,6 +82,7 @@ async function getairesponse(userid, prompt) {
 
         return result
     } catch (error) {
+        console.error("ai error:", error)
         return error.name === "AbortError" ? "provider took too long to think." : "connection error."
     } finally {
         clearTimeout(timeout)
@@ -124,16 +129,10 @@ client.on("interactionCreate", async (interaction) => {
         if (!context) return interaction.editReply("no messages.")
 
         try {
-            const response = await fetch("https://text.pollinations.ai/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    messages: [
-                        { role: "system", content: "summarize this chat concisely using discord markdown. you were created by Xiaon32." },
-                        { role: "user", content: context }
-                    ]
-                })
-            })
+            const system = "summarize this chat concisely using discord markdown. you were created by Xiaon32."
+            const url = `https://text.pollinations.ai/${encodeURIComponent(context)}?system=${encodeURIComponent(system)}`
+            
+            const response = await fetch(url)
             const result = await response.text()
             await sendchunks(interaction, result)
         } catch (error) {
