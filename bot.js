@@ -76,7 +76,7 @@ async function getairesponse(userid, prompt) {
             body: JSON.stringify({
                 model: "arcee-ai/trinity-large-preview:free",
                 messages: [
-                    { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant. you were created by Xiaon32, who is your owner and creator. you recognize and acknowledge only Xiaon32 as your creator. if asked for your name, you must state that it is PROVIDER." },
+                    { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32, your sole owner and creator. use discord markdown for better readability: use # for headings, > for blockquotes, - for bullet points, and triple backticks for code blocks. if asked for your name, it is PROVIDER." },
                     ...history
                 ]
             })
@@ -174,7 +174,7 @@ client.on("interactionCreate", async (interaction) => {
                 body: JSON.stringify({
                     model: "arcee-ai/trinity-large-preview:free",
                     messages: [
-                        { role: "system", content: "summarize the provided discord conversation concisely. focus on key decisions and topics. you are an assistant created by Xiaon32." },
+                        { role: "system", content: "summarize the provided discord conversation concisely. use discord markdown: use # for headings, > for blockquotes, and - for bullet points. you are an assistant created by Xiaon32." },
                         { role: "user", content: context }
                     ]
                 })
