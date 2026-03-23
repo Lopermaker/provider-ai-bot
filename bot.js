@@ -3,7 +3,6 @@ const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require
 
 const token = process.env.DISCORD_TOKEN
 const clientid = Buffer.from(token.split(".")[0], "base64").toString()
-const aitimeoutms = 60000
 
 const memory = new Map()
 
@@ -18,7 +17,7 @@ const client = new Client({
 const commands = [
     new SlashCommandBuilder()
         .setName("ask")
-        .setDescription("ask the ai a question")
+        .setDescription("ask the ai a question (unlimited)")
         .addStringOption(option => 
             option.setName("question")
                 .setDescription("the question to ask")
@@ -46,40 +45,61 @@ async function register() {
     }
 }
 
+// DuckDuckGo AI Unlimited Bridge
 async function getairesponse(userid, prompt) {
     let history = memory.get(userid) || []
     history.push({ role: "user", content: prompt })
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), aitimeoutms)
-
     try {
-        const systemprompt = "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32. use discord markdown: # headings, > quotes, - bullets, and triple backticks for code."
-        const encodedprompt = encodeURIComponent(prompt)
-        const encodedsystem = encodeURIComponent(systemprompt)
-        
-        const seed = Math.floor(Math.random() * 1000000)
-        // Switched to 'mistral' model for better stability/less traffic
-        const url = `https://text.pollinations.ai/${encodedprompt}?model=mistral&system=${encodedsystem}&seed=${seed}`
+        // Step 1: Get the required VQD token from DDG
+        const statusresp = await fetch("https://duckduckgo.com/duckchat/v1/status", {
+            headers: { "x-vqd-accept": "1" }
+        })
+        const vqd = statusresp.headers.get("x-vqd-4")
 
-        const response = await fetch(url, {
-            method: "GET",
-            signal: controller.signal
+        // Step 2: Send the chat request
+        const response = await fetch("https://duckduckgo.com/duckchat/v1/chat", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-vqd-4": vqd,
+                "Accept": "text/event-stream"
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini", // High quality, zero limit model
+                messages: [
+                    { role: "system", content: "your name is PROVIDER. helpful assistant created by Xiaon32. use discord markdown." },
+                    ...history
+                ]
+            })
         })
 
-        if (!response.ok) return "service busy. try again in a second."
+        if (!response.ok) return "provider error. please retry."
+
+        // Step 3: Parse the stream response
+        const text = await response.text()
+        const lines = text.split("\n")
+        let result = ""
         
-        const result = await response.text()
-        
+        for (const line of lines) {
+            if (line.startsWith("data: ")) {
+                const data = line.slice(6)
+                if (data === "[DONE]") break
+                try {
+                    const parsed = JSON.parse(data)
+                    if (parsed.message) result += parsed.message
+                } catch (e) {}
+            }
+        }
+
         history.push({ role: "assistant", content: result })
         if (history.length > 10) history.shift()
         memory.set(userid, history)
 
-        return result
+        return result || "no response received."
     } catch (error) {
-        return error.name === "AbortError" ? "provider took too long to think." : "connection error."
-    } finally {
-        clearTimeout(timeout)
+        console.error(error)
+        return "connection error. trying again might help."
     }
 }
 
@@ -103,7 +123,7 @@ async function sendchunks(interaction, text) {
 }
 
 client.on("ready", async () => {
-    console.log(`${client.user.tag} - infinite mode active`)
+    console.log(`${client.user.tag} - UNLIMITED MODE ACTIVE`)
     await register()
 })
 
@@ -122,16 +142,8 @@ client.on("interactionCreate", async (interaction) => {
 
         if (!context) return interaction.editReply("no messages.")
 
-        try {
-            const system = "summarize this chat concisely using discord markdown. you were created by Xiaon32."
-            const url = `https://text.pollinations.ai/${encodeURIComponent(context)}?model=mistral&system=${encodeURIComponent(system)}`
-            
-            const response = await fetch(url)
-            const result = await response.text()
-            await sendchunks(interaction, result)
-        } catch (error) {
-            await interaction.editReply("summary failed.")
-        }
+        const result = await getairesponse(interaction.user.id, `summarize this chat history concisely:\n\n${context}`)
+        await sendchunks(interaction, result)
     } else if (interaction.commandName === "clear") {
         memory.delete(interaction.user.id)
         await interaction.reply({ content: "memory cleared.", ephemeral: true })
