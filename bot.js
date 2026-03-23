@@ -31,7 +31,10 @@ const commands = [
             option.setName("limit")
                 .setDescription("number of messages to summarize (default 50, max 100)")
                 .setMinValue(1)
-                .setMaxValue(100))
+                .setMaxValue(100)),
+    new SlashCommandBuilder()
+        .setName("clear")
+        .setDescription("clear your conversation history with the ai")
 ].map(command => command.toJSON())
 
 const rest = new REST({ version: "10" }).setToken(token)
@@ -188,6 +191,12 @@ client.on("interactionCreate", async (interaction) => {
             console.error(error)
             await interaction.editReply("failed to summarize conversation.")
         }
+    } else if (interaction.commandName === "clear") {
+        memory.delete(interaction.user.id)
+        await interaction.reply({
+            content: "your conversation history has been cleared.",
+            ephemeral: true
+        })
     }
 })
 
