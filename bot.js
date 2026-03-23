@@ -18,7 +18,7 @@ const client = new Client({
 const commands = [
     new SlashCommandBuilder()
         .setName("ask")
-        .setDescription("ask the ai a question (cerebras engine)")
+        .setDescription("ask the ai a question (high-speed)")
         .addStringOption(option => 
             option.setName("question")
                 .setDescription("the question to ask")
@@ -61,7 +61,7 @@ async function getairesponse(userid, prompt) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "llama3.1-70b",
+                model: "llama3.1-8b", // Using the confirmed 8b model for better stability
                 messages: [
                     { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32. use discord markdown." },
                     ...history
@@ -73,7 +73,8 @@ async function getairesponse(userid, prompt) {
         
         if (!response.ok) {
             console.error("Cerebras API Error:", data)
-            return `ai error: ${data.error?.message || "unknown service error"}`
+            // This will show us the REAL error message in Discord
+            return `ai error: ${data.error?.message || JSON.stringify(data)}`
         }
 
         const result = data.choices[0].message.content
@@ -84,7 +85,7 @@ async function getairesponse(userid, prompt) {
         return result
     } catch (error) {
         console.error("Fetch Error:", error)
-        return "connection error. please try again in a moment."
+        return `connection error: ${error.message}`
     }
 }
 
@@ -108,7 +109,7 @@ async function sendchunks(interaction, text) {
 }
 
 client.on("ready", async () => {
-    console.log(`${client.user.tag} - PROVIDER ONLINE (Cerebras Engine)`)
+    console.log(`${client.user.tag} - PROVIDER ONLINE (Cerebras 8B)`)
     await register()
 })
 
