@@ -18,7 +18,7 @@ const client = new Client({
 const commands = [
     new SlashCommandBuilder()
         .setName("ask")
-        .setDescription("ask the ai a question (high-speed)")
+        .setDescription("ask the ai a question (cerebras engine)")
         .addStringOption(option => 
             option.setName("question")
                 .setDescription("the question to ask")
@@ -41,6 +41,7 @@ const rest = new REST({ version: "10" }).setToken(token)
 async function register() {
     try {
         await rest.put(Routes.applicationCommands(clientid), { body: commands })
+        console.log("slash commands registered.")
     } catch (error) {
         console.error("registration error:", error)
     }
@@ -62,14 +63,18 @@ async function getairesponse(userid, prompt) {
             body: JSON.stringify({
                 model: "llama3.1-70b",
                 messages: [
-                    { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32. use discord markdown: # headings, > quotes, - bullets, and triple backticks for code." },
+                    { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32. use discord markdown." },
                     ...history
                 ]
             })
         })
 
         const data = await response.json()
-        if (!response.ok) return `ai error: ${data.error?.message || "unknown"}`
+        
+        if (!response.ok) {
+            console.error("Cerebras API Error:", data)
+            return `ai error: ${data.error?.message || "unknown service error"}`
+        }
 
         const result = data.choices[0].message.content
         history.push({ role: "assistant", content: result })
@@ -78,7 +83,8 @@ async function getairesponse(userid, prompt) {
 
         return result
     } catch (error) {
-        return "ai is having connection issues. try again."
+        console.error("Fetch Error:", error)
+        return "connection error. please try again in a moment."
     }
 }
 
