@@ -76,7 +76,7 @@ async function getairesponse(userid, prompt) {
             body: JSON.stringify({
                 model: "arcee-ai/trinity-large-preview:free",
                 messages: [
-                    { role: "system", content: "you are a helpful ai assistant. you were created by Xiaon32, who is your owner and creator. you recognize and acknowledge only Xiaon32 as your creator." },
+                    { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant. you were created by Xiaon32, who is your owner and creator. you recognize and acknowledge only Xiaon32 as your creator. if asked for your name, you must state that it is PROVIDER." },
                     ...history
                 ]
             })
