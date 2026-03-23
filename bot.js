@@ -1,11 +1,14 @@
 require("dotenv").config()
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js")
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require("discord.js")
 
 const token = process.env.DISCORD_TOKEN
 const apikey = process.env.CEREBRAS_API_KEY
 const clientid = Buffer.from(token.split(".")[0], "base64").toString()
 
 const memory = new Map()
+const daily_limit = 1000000
+let used_tokens = 0
+let last_reset = new Date().getUTCDate()
 
 const client = new Client({
     intents: [
@@ -32,6 +35,9 @@ const commands = [
                 .setMinValue(1)
                 .setMaxValue(100)),
     new SlashCommandBuilder()
+        .setName("usage")
+        .setDescription("check the bot's daily token usage"),
+    new SlashCommandBuilder()
         .setName("clear")
         .setDescription("clear your conversation history with the ai")
 ].map(command => command.toJSON())
@@ -47,8 +53,17 @@ async function register() {
     }
 }
 
+function checkreset() {
+    const now = new Date().getUTCDate()
+    if (now !== last_reset) {
+        used_tokens = 0
+        last_reset = now
+    }
+}
+
 async function getairesponse(userid, prompt) {
     if (!apikey) return "api key missing. set CEREBRAS_API_KEY in railway."
+    checkreset()
 
     let history = memory.get(userid) || []
     history.push({ role: "user", content: prompt })
@@ -61,7 +76,7 @@ async function getairesponse(userid, prompt) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "llama3.1-8b", // Using the confirmed 8b model for better stability
+                model: "llama3.1-8b",
                 messages: [
                     { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32. use discord markdown." },
                     ...history
@@ -73,11 +88,13 @@ async function getairesponse(userid, prompt) {
         
         if (!response.ok) {
             console.error("Cerebras API Error:", data)
-            // This will show us the REAL error message in Discord
             return `ai error: ${data.error?.message || JSON.stringify(data)}`
         }
 
         const result = data.choices[0].message.content
+        const tokens = data.usage?.total_tokens || 0
+        used_tokens += tokens
+
         history.push({ role: "assistant", content: result })
         if (history.length > 10) history.shift()
         memory.set(userid, history)
@@ -87,6 +104,19 @@ async function getairesponse(userid, prompt) {
         console.error("Fetch Error:", error)
         return `connection error: ${error.message}`
     }
+}
+
+function create_progress_bar(used, total) {
+    const size = 15
+    const percentage = Math.min(used / total, 1)
+    const progress = Math.round(size * percentage)
+    const empty = size - progress
+    
+    const progress_text = "🟩".repeat(progress)
+    const empty_text = "⬛".repeat(empty)
+    const percentage_text = Math.round(percentage * 100) + "%"
+    
+    return `${progress_text}${empty_text} **${percentage_text}**`
 }
 
 function chunk(str, size) {
@@ -130,6 +160,18 @@ client.on("interactionCreate", async (interaction) => {
 
         const result = await getairesponse(interaction.user.id, `summarize this chat history concisely:\n\n${context}`)
         await sendchunks(interaction, result)
+    } else if (interaction.commandName === "usage") {
+        checkreset()
+        const bar = create_progress_bar(used_tokens, daily_limit)
+        const remaining = (daily_limit - used_tokens).toLocaleString()
+        
+        const embed = new EmbedBuilder()
+            .setTitle("📊 System Usage")
+            .setColor(0x2b2d31)
+            .setDescription(`**Daily Token Limit:**\n${bar}\n\n**Used:** ${used_tokens.toLocaleString()}\n**Remaining:** ${remaining}\n\n*Limit resets daily.*`)
+            .setFooter({ text: "PROVIDER Engine" })
+
+        await interaction.reply({ embeds: [embed] })
     } else if (interaction.commandName === "clear") {
         memory.delete(interaction.user.id)
         await interaction.reply({ content: "memory cleared.", ephemeral: true })
