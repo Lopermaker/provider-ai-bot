@@ -2,6 +2,7 @@ require("dotenv").config()
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js")
 
 const token = process.env.DISCORD_TOKEN
+const apikey = process.env.CEREBRAS_API_KEY
 const clientid = Buffer.from(token.split(".")[0], "base64").toString()
 
 const memory = new Map()
@@ -17,7 +18,7 @@ const client = new Client({
 const commands = [
     new SlashCommandBuilder()
         .setName("ask")
-        .setDescription("ask the ai a question (unlimited)")
+        .setDescription("ask the ai a question (high-speed)")
         .addStringOption(option => 
             option.setName("question")
                 .setDescription("the question to ask")
@@ -45,61 +46,39 @@ async function register() {
     }
 }
 
-// DuckDuckGo AI Unlimited Bridge
 async function getairesponse(userid, prompt) {
+    if (!apikey) return "api key missing. set CEREBRAS_API_KEY in railway."
+
     let history = memory.get(userid) || []
     history.push({ role: "user", content: prompt })
 
     try {
-        // Step 1: Get the required VQD token from DDG
-        const statusresp = await fetch("https://duckduckgo.com/duckchat/v1/status", {
-            headers: { "x-vqd-accept": "1" }
-        })
-        const vqd = statusresp.headers.get("x-vqd-4")
-
-        // Step 2: Send the chat request
-        const response = await fetch("https://duckduckgo.com/duckchat/v1/chat", {
+        const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
             method: "POST",
             headers: {
-                "Content-Type": "application/json",
-                "x-vqd-4": vqd,
-                "Accept": "text/event-stream"
+                "Authorization": `Bearer ${apikey}`,
+                "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini", // High quality, zero limit model
+                model: "llama3.1-70b",
                 messages: [
-                    { role: "system", content: "your name is PROVIDER. helpful assistant created by Xiaon32. use discord markdown." },
+                    { role: "system", content: "your name is PROVIDER. you are a helpful ai assistant created by Xiaon32. use discord markdown: # headings, > quotes, - bullets, and triple backticks for code." },
                     ...history
                 ]
             })
         })
 
-        if (!response.ok) return "provider error. please retry."
+        const data = await response.json()
+        if (!response.ok) return `ai error: ${data.error?.message || "unknown"}`
 
-        // Step 3: Parse the stream response
-        const text = await response.text()
-        const lines = text.split("\n")
-        let result = ""
-        
-        for (const line of lines) {
-            if (line.startsWith("data: ")) {
-                const data = line.slice(6)
-                if (data === "[DONE]") break
-                try {
-                    const parsed = JSON.parse(data)
-                    if (parsed.message) result += parsed.message
-                } catch (e) {}
-            }
-        }
-
+        const result = data.choices[0].message.content
         history.push({ role: "assistant", content: result })
         if (history.length > 10) history.shift()
         memory.set(userid, history)
 
-        return result || "no response received."
+        return result
     } catch (error) {
-        console.error(error)
-        return "connection error. trying again might help."
+        return "ai is having connection issues. try again."
     }
 }
 
@@ -123,7 +102,7 @@ async function sendchunks(interaction, text) {
 }
 
 client.on("ready", async () => {
-    console.log(`${client.user.tag} - UNLIMITED MODE ACTIVE`)
+    console.log(`${client.user.tag} - PROVIDER ONLINE (Cerebras Engine)`)
     await register()
 })
 
@@ -140,7 +119,7 @@ client.on("interactionCreate", async (interaction) => {
         const messages = await interaction.channel.messages.fetch({ limit })
         const context = messages.reverse().filter(m => !m.author.bot && m.content).map(m => `${m.author.username}: ${m.content}`).join("\n")
 
-        if (!context) return interaction.editReply("no messages.")
+        if (!context) return interaction.editReply("no messages found.")
 
         const result = await getairesponse(interaction.user.id, `summarize this chat history concisely:\n\n${context}`)
         await sendchunks(interaction, result)
