@@ -13,7 +13,6 @@ const daily_limit = 1000000
 let used_tokens = 0
 let last_reset = new Date().getUTCDate()
 
-// Load saved usage
 if (fs.existsSync(usage_path)) {
     try {
         const data = JSON.parse(fs.readFileSync(usage_path))
@@ -27,7 +26,11 @@ const client = new Client({
 })
 
 const commands = [
-    new SlashCommandBuilder().setName("ask").setDescription("ask the ai (high-speed)").addStringOption(o => o.setName("question").setDescription("the question").setRequired(true)),
+    new SlashCommandBuilder()
+        .setName("ask")
+        .setDescription("ask the ai (high-speed)")
+        .addStringOption(o => o.setName("question").setDescription("the question").setRequired(true))
+        .addAttachmentOption(o => o.setName("image").setDescription("optional image to analyze")),
     new SlashCommandBuilder().setName("summarize").setDescription("summarize chat").addIntegerOption(o => o.setName("limit").setDescription("messages (max 100)")),
     new SlashCommandBuilder().setName("usage").setDescription("check daily usage")
         .addIntegerOption(o => o.setName("set").setDescription("Xiaon32 only: manually set usage amount")),
@@ -53,19 +56,31 @@ function checkreset() {
     }
 }
 
-async function getairesponse(userid, prompt) {
+async function getairesponse(userid, prompt, imageurl = null) {
     if (!apikey) return "api key missing."
     checkreset()
 
     let history = memory.get(userid) || []
-    history.push({ role: "user", content: prompt })
+    
+    // Prepare the new message
+    let currentcontent;
+    if (imageurl) {
+        currentcontent = [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: imageurl } }
+        ];
+    } else {
+        currentcontent = prompt;
+    }
+
+    history.push({ role: "user", content: currentcontent })
 
     try {
         const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
             method: "POST",
             headers: { "Authorization": `Bearer ${apikey}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "llama3.1-8b",
+                model: imageurl ? "llama3.2-11b-vision" : "llama3.1-8b",
                 messages: [{ role: "system", content: "your name is PROVIDER. created by Xiaon32. use markdown." }, ...history]
             })
         })
@@ -117,7 +132,11 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.reply({ embeds: [embed] })
     } else if (interaction.commandName === "ask") {
         await interaction.deferReply()
-        const response = await getairesponse(interaction.user.id, interaction.options.getString("question"))
+        const question = interaction.options.getString("question")
+        const image = interaction.options.getAttachment("image")
+        const imageurl = image && image.contentType.startsWith("image/") ? image.url : null
+        
+        const response = await getairesponse(interaction.user.id, question, imageurl)
         const chunks = response.match(/[\s\S]{1,2000}/g) || []
         for (let i = 0; i < chunks.length; i++) i === 0 ? await interaction.editReply(chunks[i]) : await interaction.followUp(chunks[i])
     } else if (interaction.commandName === "summarize") {
@@ -139,7 +158,10 @@ client.on("messageCreate", async (message) => {
     const isReply = message.reference && (await message.channel.messages.fetch(message.reference.messageId)).author.id === client.user.id
     if (isReply) {
         await message.channel.sendTyping()
-        const response = await getairesponse(message.author.id, message.content)
+        const image = message.attachments.first()
+        const imageurl = image && image.contentType.startsWith("image/") ? image.url : null
+        
+        const response = await getairesponse(message.author.id, message.content, imageurl)
         const chunks = response.match(/[\s\S]{1,2000}/g) || []
         for (const msg of chunks) await message.reply(msg)
     }
